@@ -769,6 +769,18 @@ function fill(t,k){
   const left = k.bal==null?'[剩余课时]':k.bal;
   return t.replace(/{parent}，/g,k.parent?k.parent+'，':'').replace(/{parent}/g,k.parent||'').replace(/{kid}/g,k.name).replace(/{left_txt}/g,k.bal!=null?`，还剩${k.bal}节课`:'').replace(/{left}/g,left);
 }
+let lastMark=null;
+function openWeChat(){
+  const st=document.getElementById('mst'); let left=false;
+  const onHide=()=>{ if(document.hidden) left=true; };
+  document.addEventListener('visibilitychange',onHide);
+  setTimeout(()=>{ document.removeEventListener('visibilitychange',onHide);
+    if(!left&&st&&document.body.contains(st)){ st.textContent='Copied. If WeChat did not open, open it yourself and paste.'; st.style.color='var(--gold)'; } },1600);
+  const back=()=>{ if(!document.hidden){ document.removeEventListener('visibilitychange',back);
+    const s2=document.getElementById('mst'); if(s2){ s2.textContent='Back from WeChat? If you sent it, tap "Sent & next".'; s2.style.color='var(--gold)'; } } };
+  document.addEventListener('visibilitychange',back);
+  location.href='weixin://';
+}
 function vMessages(){
   const T=TEMPLATES;
   const grp=GROUPS.find(g=>g.key===mg)||GROUPS[0];
@@ -795,9 +807,11 @@ function vMessages(){
      <div class="mute" style="margin:10px 0 6px">${k.parent?'Parent: '+esc(k.parent)+'. ':'No parent name saved, the greeting works without one. '}Edit freely. Fill anything in [ ] with a true detail.</div>
      <textarea id="mx" lang="zh" aria-label="Message text">${tpl?esc(fill(tpl.text,k)):''}</textarea>
      <div class="row" style="margin-top:10px">
-       <button class="btn p" id="cp">Copy for WeChat</button>
+       <button class="btn p" id="cpw">Copy + open WeChat</button>
+       <button class="btn" id="cp">Copy only</button>
        <button class="btn" id="cpa">Copy + package line</button>
        <button class="btn" id="mm">Sent &amp; next</button>
+       <button class="btn" id="cmn">Copy, sent &amp; next</button>${lastMark?'<button class="btn" id="un">Undo last sent</button>':''}
        <button class="btn" id="sk">Skip</button>
      </div>
      <div class="mute" id="mst" style="margin-top:8px;min-height:18px" role="status"></div>
@@ -816,22 +830,32 @@ function vMessages(){
     try{ await navigator.clipboard.writeText(txt); }
     catch(e){ mx.focus(); mx.select(); mx.setSelectionRange(0,mx.value.length); try{ ok=document.execCommand('copy'); }catch(_){ ok=false; } }
     const st=$('#mst');
-    if(!ok){ st.textContent='Copy failed. The text is selected: press and hold, then tap Copy.'; st.style.color='var(--gold)'; return; }
+    if(!ok){ st.textContent='Copy failed. The text is selected: press and hold, then tap Copy.'; st.style.color='var(--gold)'; return false; }
     st.textContent=open?'Copied, but there are still [ ] placeholders to fill in WeChat.':'Copied. Paste into WeChat.';
-    st.style.color=open?'var(--gold)':'var(--ok-t)'; haptic(10);
+    st.style.color=open?'var(--gold)':'var(--ok-t)'; haptic(10); return true;
   };
   $('#cp').onclick=()=>copy(mx.value);
   $('#cpa').onclick=()=>{const kk=kid(mk)||k;const cur=mx.value;const tx=cur.includes('抵扣')?cur:cur+'\n\n'+fill(T.find(x=>x.id==='pkgline').text,kk);mx.value=tx;fit();copy(tx);};
   $('#sk').onclick=()=>{const n=nextUnsent();if(n){openKid(n.id);}else toast('No more unsent kids in this group');};
-  $('#mm').onclick=()=>{
-    if(!mt) return toast('Choose a template first');
-    const kk=kid(mk); if(!kk) return;
-    const lab=T.find(x=>x.id===mt).label.split(' · ')[1]||mt; if(!kk.msgs.some(m=>m.d===today()&&m.t===lab)){ kk.msgs.push({d:today(),t:lab}); save(); }
+  const markSent=()=>{
+    if(!mt){ toast('Choose a template first'); return false; }
+    const kk=kid(mk); if(!kk) return false;
+    const lab=T.find(x=>x.id===mt).label.split(' · ')[1]||mt;
+    if(!kk.msgs.some(m=>m.d===today()&&m.t===lab)){ kk.msgs.push({d:today(),t:lab}); save(); lastMark={id:kk.id,d:today(),t:lab,g:mg}; }
     const n=nextUnsent(); const done=members.filter(sentToday).length;
     mt=null; if(n){mk=n.id;mkManual=false;}
     render(); haptic(15);
     if(n){ toast(`${done}/${members.length} sent. Next: ${n.name}`); }
     else { toast(`${grp.label}: all ${members.length} sent 🎉`); confetti(); haptic([20,50,20,50,30]); }
+    return true;
+  };
+  $('#mm').onclick=markSent;
+  $('#cmn').onclick=async()=>{ if(!mt) return toast('Choose a template first'); if(await copy(mx.value)) markSent(); };
+  $('#cpw').onclick=async()=>{ if(await copy(mx.value)) openWeChat(); };
+  const ub=$('#un'); if(ub) ub.onclick=()=>{
+    const m=lastMark; if(!m) return; const kk=kid(m.id);
+    if(kk){ for(let i=kk.msgs.length-1;i>=0;i--){ if(kk.msgs[i].d===m.d&&kk.msgs[i].t===m.t){ kk.msgs.splice(i,1); break; } } save(); }
+    lastMark=null; mg=m.g; mk=m.id; mkManual=true; mt=null; render(); toast('Undone: '+(kk?kk.name:'')+' is back in the list');
   };
 }
 
